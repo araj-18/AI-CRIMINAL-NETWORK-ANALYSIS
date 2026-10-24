@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Criminal Network Analysis — Investigator View</title>
+<style>
+  :root {
+    --ink: #1b2430;
+    --ink-soft: #262f3d;
+    --mist: #f4f5f7;
+    --mist-card: #e8eaee;
+    --crimson: #c1272d;
+    --slate: #3e4c59;
+    --muted: #62707d;
+    --white: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--mist);
+    color: #232a33;
+  }
+  header {
+    background: var(--ink);
+    color: var(--white);
+    padding: 18px 28px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 3px solid var(--crimson);
+  }
+  header h1 {
+    font-family: Georgia, "Cambria", serif;
+    font-size: 22px;
+    margin: 0;
+    font-weight: 700;
+  }
+  header .meta { color: #aeb7c4; font-size: 13px; }
+  .layout {
+    display: grid;
+    grid-template-columns: 260px 1fr 320px;
+    height: calc(100vh - 62px);
+  }
+  .sidebar {
+    background: var(--white);
+    border-right: 1px solid var(--mist-card);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-header { padding: 16px; border-bottom: 1px solid var(--mist-card); }
+  .sidebar-header input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--mist-card);
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  .person-list { overflow-y: auto; flex: 1; }
+  .person-row {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--mist-card);
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .person-row:hover { background: var(--mist); }
+  .person-row.active { background: var(--ink); color: var(--white); }
+  .person-row .name { font-weight: 600; }
+  .person-row .sub { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .person-row.active .sub { color: #aeb7c4; }
+  .graph-panel { position: relative; background: var(--white); }
+  #graph { width: 100%; height: 100%; display: block; }
+  .node-label {
+    font-size: 11px;
+    font-weight: 600;
+    fill: #232a33;
+    pointer-events: none;
+  }
+  .edge-line { stroke: #c7cdd6; stroke-width: 1.5; }
+  .edge-line.highlighted { stroke: var(--crimson); stroke-width: 2.5; }
+  .node-circle { cursor: pointer; stroke: var(--white); stroke-width: 2; }
+  .node-circle.dimmed { opacity: 0.25; }
+  .detail-panel {
+    background: var(--white);
+    border-left: 1px solid var(--mist-card);
+    padding: 20px;
+    overflow-y: auto;
+  }
+  .detail-panel h2 {
+    font-family: Georgia, "Cambria", serif;
+    font-size: 19px;
+    margin: 0 0 4px 0;
+  }
+  .empty-state { color: var(--muted); font-size: 13px; line-height: 1.6; margin-top: 40px; }
+  .score-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 16px 0;
+  }
+  .score-box {
+    background: var(--mist);
+    padding: 10px 12px;
+    border-radius: 4px;
+  }
+  .score-box .label { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .score-box .value { font-size: 18px; font-weight: 700; color: var(--ink); }
+  .section-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--slate);
+    margin: 20px 0 8px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--mist-card);
+  }
+  .connection-row {
+    font-size: 13px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--mist-card);
+    display: flex;
+    justify-content: space-between;
+  }
+  .connection-row .rel { color: var(--muted); font-size: 11px; }
+  .flag-banner {
+    background: #fdecec;
+    border: 1px solid var(--crimson);
+    border-radius: 4px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    font-size: 12.5px;
+  }
+  .flag-banner .flag-title { font-weight: 700; color: var(--crimson); margin-bottom: 3px; }
+  .anomaly-strip {
+    background: var(--ink);
+    color: var(--white);
+    padding: 10px 28px;
+    font-size: 13px;
+    display: flex;
+    gap: 24px;
+    align-items: center;
+    border-bottom: 1px solid #2e3947;
+  }
+  .anomaly-strip .tag {
+    background: var(--crimson);
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Criminal Network Analysis — Investigator View</h1>
+  <div class="meta" id="header-meta"></div>
+</header>
+
+<div id="anomaly-strip-container"></div>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <input type="text" id="search" placeholder="Search by name...">
+    </div>
+    <div class="person-list" id="person-list"></div>
+  </div>
+
+  <div class="graph-panel">
+    <svg id="graph"></svg>
+  </div>
+
+  <div class="detail-panel" id="detail-panel">
+    <div class="empty-state">Click a person on the left or in the graph to see their details, connections, and any flagged patterns.</div>
+  </div>
+</div>
+
+<script>
+const DATA = {"nodes": [{"id": "Priya Nair", "type": "Person", "x": 656.7881035611274, "y": 313.80634342518545, "degree": 26, "weighted_degree": 26, "betweenness_centrality": 0.4545, "pagerank": 0.1732, "community_id": 0}, {"id": "Rahul Sharma", "type": "Person", "x": 528.6139106656709, "y": 329.7339396922043, "degree": 41, "weighted_degree": 41, "betweenness_centrality": 0.2, "pagerank": 0.2372, "community_id": 1}, {"id": "MH-12-AB-1234", "type": "Vehicle", "x": 436.4941376219899, "y": 60.0, "degree": 2}, {"id": "MG Road", "type": "Location", "x": 455.33279717274206, "y": 501.4647892716847, "degree": 5}, {"id": "DL-04-CD-5678", "type": "Vehicle", "x": 728.5911565419733, "y": 590.0, "degree": 2}, {"id": "Amit Verma", "type": "Person", "x": 564.6641440492972, "y": 388.34252789293004, "degree": 20, "weighted_degree": 20, "betweenness_centrality": 0.0, "pagerank": 0.1152, "community_id": 0}, {"id": "Lakeview Apartments", "type": "Location", "x": 929.5716221015235, "y": 435.0705662546206, "degree": 2}, {"id": "Vikram Singh", "type": "Person", "x": 512.3176876159725, "y": 249.3118612051881, "degree": 16, "weighted_degree": 16, "betweenness_centrality": 0.0, "pagerank": 0.0938, "community_id": 0}, {"id": "Sanjay Gupta", "type": "Person", "x": 417.7039720554483, "y": 341.24966376361976, "degree": 35, "weighted_degree": 35, "betweenness_centrality": 0.2182, "pagerank": 0.1983, "community_id": 1}, {"id": "Andheri Market", "type": "Location", "x": 940.0, "y": 231.786968370104, "degree": 3}, {"id": "Sector 12 Warehouse", "type": "Location", "x": 741.7470633037874, "y": 66.2782420174941, "degree": 2}, {"id": "Central Bus Depot", "type": "Location", "x": 60.0, "y": 346.00841848396504, "degree": 2}], "edges": [{"source": "Priya Nair", "target": "Rahul Sharma", "weight": 3, "evidence": [{"source": "Priya Nair", "relation": "SEEN_WITH", "target": "Rahul Sharma", "source_document": "FIR-1000", "evidence_type": "FIR"}, {"source": "Priya Nair", "relation": "HAD_ALTERCATION_WITH", "target": "Rahul Sharma", "source_document": "FIR-1001", "evidence_type": "FIR"}, {"source": "Rahul Sharma", "relation": "SOCIAL_FOLLOWS", "target": "Priya Nair", "platform": "Instagram", "evidence_type": "SOCMINT"}]}, {"source": "Priya Nair", "target": "MH-12-AB-1234", "weight": 1, "evidence": [{"source": "Priya Nair", "relation": "LINKED_TO_VEHICLE", "target": "MH-12-AB-1234", "source_document": "FIR-1000", "evidence_type": "FIR"}]}, {"source": "Priya Nair", "target": "MG Road", "weight": 2, "evidence": [{"source": "Priya Nair", "relation": "PRESENT_AT", "target": "MG Road", "source_document": "FIR-1000", "evidence_type": "FIR"}, {"source": "Priya Nair", "relation": "PRESENT_AT", "target": "MG Road", "source_document": "FIR-1005", "evidence_type": "FIR"}]}, {"source": "Priya Nair", "target": "DL-04-CD-5678", "weight": 1, "evidence": [{"source": "Priya Nair", "relation": "LINKED_TO_VEHICLE", "target": "DL-04-CD-5678", "source_document": "FIR-1003", "evidence_type": "FIR"}]}, {"source": "Priya Nair", "target": "Amit Verma", "weight": 6, "evidence": [{"source": "Priya Nair", "relation": "PRESENT_AT", "target": "Amit Verma", "source_document": "FIR-1003", "evidence_type": "FIR"}, {"source": "Amit Verma", "relation": "CALLED", "target": "Priya Nair", "timestamp": "2026-09-04 01:38:19", "duration_sec": "580", "evidence_type": "CDR"}, {"source": "Priya Nair", "relation": "CALLED", "target": "Amit Verma", "timestamp": "2026-09-03 02:43:24", "duration_sec": "262", "evidence_type": "CDR"}, {"source": "Priya Nair", "relation": "TRANSACTED_WITH", "target": "Amit Verma", "amount_inr": "10000", "timestamp": "2026-08-07 01:44:51", "evidence_type": "FINANCIAL"}, {"source": "Amit Verma", "relation": "TRANSACTED_WITH", "target": "Priya Nair", "amount_inr": "5000", "timestamp": "2026-08-09 01:44:51", "evidence_type": "FINANCIAL"}, {"source": "Priya Nair", "relation": "TRANSACTED_WITH", "target": "Amit Verma", "amount_inr": "500", "timestamp": "2026-08-28 01:44:51", "evidence_type": "FINANCIAL"}]}, {"source": "Priya Nair", "target": "Lakeview Apartments", "weight": 1, "evidence": [{"source": "Priya Nair", "relation": "PRESENT_AT", "target": "Lakeview Apartments", "source_document": "FIR-1003", "evidence_type": "FIR"}]}, {"source": "Priya Nair", "target": "Vikram Singh", "weight": 4, "evidence": [{"source": "Priya Nair", "relation": "HAD_ALTERCATION_WITH", "target": "Vikram Singh", "source_document": "FIR-1004", "evidence_type": "FIR"}, {"source": "Vikram Singh", "relation": "CALLED", "target": "Priya Nair", "timestamp": "2026-09-03 22:08:48", "duration_sec": "151", "evidence_type": "CDR"}, {"source": "Vikram Singh", "relation": "CALLED", "target": "Priya Nair", "timestamp": "2026-09-01 15:55:46", "duration_sec": "58", "evidence_type": "CDR"}, {"source": "Vikram Singh", "relation": "TRANSACTED_WITH", "target": "Priya Nair", "amount_inr": "10000", "timestamp": "2026-08-13 01:44:51", "evidence_type": "FINANCIAL"}]}, {"source": "Priya Nair", "target": "Sanjay Gupta", "weight": 4, "evidence": [{"source": "Sanjay Gupta", "relation": "TRANSACTED_WITH", "target": "Priya Nair", "amount_inr": "5000", "timestamp": "2026-07-05 01:44:51", "evidence_type": "FINANCIAL"}, {"source": "Sanjay Gupta", "relation": "TRANSACTED_WITH", "target": "Priya Nair", "amount_inr": "10000", "timestamp": "2026-08-13 01:44:51", "evidence_type": "FINANCIAL"}, {"source": "Priya Nair", "relation": "TRANSACTED_WITH", "target": "Sanjay Gupta", "amount_inr": "5000", "timestamp": "2026-07-17 01:44:51", "evidence_type": "FINANCIAL"}, {"source": "Priya Nair", "relation": "SOCIAL_FRIENDS_WITH", "target": "Sanjay Gupta", "platform": "Facebook", "evidence_type": "SOCMINT"}]}, {"source": "Priya Nair", "target": "Andheri Market", "weight": 3, "evidence": [{"source": "Priya Nair", "relation": "PRESENT_AT", "target": "Andheri Market", "timestamp": "2026-08-26 01:45:02", "platform": "Facebook", "evidence_type": "SOCMINT"}, {"source": "Priya Nair", "relation": "PRESENT_AT", "target": "Andheri Market", "timestamp": "2026-08-08 01:45:02", "platform": "X", "evidence_type": "SOCMINT"}, {"source": "Priya Nair", "relation": "PRESENT_AT", "target": "Andheri Market", "timestamp": "2026-07-23 01:45:02", "platform": "Facebook", "evidence_type": "SOCMINT"}]}, {"source": "Priya Nair", "target": "Sector 12 Warehouse", "weight": 1, "evidence": [{"source": "Priya Nair", "relation": "PRESENT_AT", "target": "Sector 12 Warehouse", "timestamp": "2026-09-08 01:45:02", "platform": "X", "evidence_type": "SOCMINT"}]}, {"source": "Rahul Sharma", "target": "MH-12-AB-1234", "weight": 1, "evidence": [{"source": "Rahul Sharma", "relation": "LINKED_TO_VEHICLE", "target": "MH-12-AB-1234", "source_document": "FIR-1000", "evidence_type": "FIR"}]}, {"source": "Rahul Sharma", "target": "MG Road", "weight": 2, "evidence": [{"source": "Rahul Sharma", "relation": "PRESENT_AT", "target": "MG Road", "source_document": "FIR-1000", "evidence_type": "FIR"}, {"source": "Rahul Sharma", "relation": "PRESENT_AT", "target": "MG Road", "source_document": "FIR-1002", "evidence_type": "FIR"}]}, {"source": "Rahul Sharma", "target": "DL-04-CD-5678", "weight": 1, "evidence": [{"source": "Rahul Sharma", "relation": "LINKED_TO_VEHICLE", "target": "DL-04-CD-5678", "source_document": "FIR-1006", "evidence_type": "FIR"}]}, {"source": "Rahul Sharma", "target": "Lakeview Apartments", "weight": 1, "evidence": [{"source": "Rahul Sharma", "relation": "PRESENT_AT", "target": "Lakeview Apartments", "source_document": "FIR-1007", "evidence_type": "FIR"}]}, {"source": "Rahul Sharma", "target": "Sanjay Gupta", "weight": 21, "evidence": [{"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-07 00:27:25", "duration_sec": "208", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-05 05:31:47", "duration_sec": "165", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-06 17:33:32", "duration_sec": "200", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-06 05:27:37", "duration_sec": "50", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-05 03:56:49", "duration_sec": "131", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-06 14:51:17", "duration_sec": "55", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-06 18:48:10", "duration_sec": "66", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-05 19:59:37", "duration_sec": "247", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-06 08:15:37", "duration_sec": "201", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-05 09:33:17", "duration_sec": "196", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-05 11:48:14", "duration_sec": "151", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-06 11:26:05", "duration_sec": "51", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-06 06:59:09", "duration_sec": "102", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-06 03:23:10", "duration_sec": "140", "evidence_type": "CDR"}, {"source": "Sanjay Gupta", "relation": "CALLED", "target": "Rahul Sharma", "timestamp": "2026-09-02 15:56:38", "duration_sec": "590", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-07 07:28:02", "duration_sec": "358", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-04 12:42:02", "duration_sec": "474", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-09 00:07:30", "duration_sec": "192", "evidence_type": "CDR"}, {"source": "Sanjay Gupta", "relation": "TRANSACTED_WITH", "target": "Rahul Sharma", "amount_inr": "10000", "timestamp": "2026-06-26 01:44:51", "evidence_type": "FINANCIAL"}, {"source": "Sanjay Gupta", "relation": "TRANSACTED_WITH", "target": "Rahul Sharma", "amount_inr": "1500", "timestamp": "2026-07-06 01:44:51", "evidence_type": "FINANCIAL"}, {"source": "Rahul Sharma", "relation": "SOCIAL_FRIENDS_WITH", "target": "Sanjay Gupta", "platform": "Facebook", "evidence_type": "SOCMINT"}]}, {"source": "Rahul Sharma", "target": "Amit Verma", "weight": 6, "evidence": [{"source": "Amit Verma", "relation": "CALLED", "target": "Rahul Sharma", "timestamp": "2026-09-07 14:45:24", "duration_sec": "420", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Amit Verma", "timestamp": "2026-09-06 03:14:12", "duration_sec": "442", "evidence_type": "CDR"}, {"source": "Amit Verma", "relation": "CALLED", "target": "Rahul Sharma", "timestamp": "2026-09-02 21:55:18", "duration_sec": "590", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "TRANSACTED_WITH", "target": "Amit Verma", "amount_inr": "500", "timestamp": "2026-08-12 01:44:51", "evidence_type": "FINANCIAL"}, {"source": "Rahul Sharma", "relation": "TRANSACTED_WITH", "target": "Amit Verma", "amount_inr": "500", "timestamp": "2026-09-01 01:44:51", "evidence_type": "FINANCIAL"}, {"source": "Rahul Sharma", "relation": "SOCIAL_FOLLOWS", "target": "Amit Verma", "platform": "Facebook", "evidence_type": "SOCMINT"}]}, {"source": "Rahul Sharma", "target": "Vikram Singh", "weight": 5, "evidence": [{"source": "Vikram Singh", "relation": "CALLED", "target": "Rahul Sharma", "timestamp": "2026-09-04 02:42:03", "duration_sec": "489", "evidence_type": "CDR"}, {"source": "Vikram Singh", "relation": "CALLED", "target": "Rahul Sharma", "timestamp": "2026-09-08 03:51:04", "duration_sec": "315", "evidence_type": "CDR"}, {"source": "Vikram Singh", "relation": "CALLED", "target": "Rahul Sharma", "timestamp": "2026-09-05 21:32:11", "duration_sec": "510", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "CALLED", "target": "Vikram Singh", "timestamp": "2026-09-08 15:34:02", "duration_sec": "324", "evidence_type": "CDR"}, {"source": "Rahul Sharma", "relation": "TRANSACTED_WITH", "target": "Vikram Singh", "amount_inr": "500", "timestamp": "2026-07-09 01:44:51", "evidence_type": "FINANCIAL"}]}, {"source": "Rahul Sharma", "target": "Sector 12 Warehouse", "weight": 1, "evidence": [{"source": "Rahul Sharma", "relation": "PRESENT_AT", "target": "Sector 12 Warehouse", "timestamp": "2026-07-30 01:45:02", "platform": "Facebook", "evidence_type": "SOCMINT"}]}, {"source": "MG Road", "target": "Sanjay Gupta", "weight": 1, "evidence": [{"source": "Sanjay Gupta", "relation": "PRESENT_AT", "target": "MG Road", "timestamp": "2026-09-03 01:45:02", "platform": "Instagram", "evidence_type": "SOCMINT"}]}, {"source": "Amit Verma", "target": "Sanjay Gupta", "weight": 4, "evidence": [{"source": "Amit Verma", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-07 22:19:04", "duration_sec": "67", "evidence_type": "CDR"}, {"source": "Sanjay Gupta", "relation": "CALLED", "target": "Amit Verma", "timestamp": "2026-09-06 08:50:07", "duration_sec": "415", "evidence_type": "CDR"}, {"source": "Amit Verma", "relation": "TRANSACTED_WITH", "target": "Sanjay Gupta", "amount_inr": "25000", "timestamp": "2026-07-20 01:44:51", "evidence_type": "FINANCIAL"}, {"source": "Sanjay Gupta", "relation": "TRANSACTED_WITH", "target": "Amit Verma", "amount_inr": "8000", "timestamp": "2026-08-31 01:44:51", "evidence_type": "FINANCIAL"}]}, {"source": "Amit Verma", "target": "Vikram Singh", "weight": 4, "evidence": [{"source": "Vikram Singh", "relation": "CALLED", "target": "Amit Verma", "timestamp": "2026-09-02 04:18:55", "duration_sec": "175", "evidence_type": "CDR"}, {"source": "Vikram Singh", "relation": "TRANSACTED_WITH", "target": "Amit Verma", "amount_inr": "25000", "timestamp": "2026-08-24 01:44:51", "evidence_type": "FINANCIAL"}, {"source": "Amit Verma", "relation": "TRANSACTED_WITH", "target": "Vikram Singh", "amount_inr": "500", "timestamp": "2026-09-09 01:44:51", "evidence_type": "FINANCIAL"}, {"source": "Amit Verma", "relation": "SOCIAL_FRIENDS_WITH", "target": "Vikram Singh", "platform": "Instagram", "evidence_type": "SOCMINT"}]}, {"source": "Vikram Singh", "target": "Sanjay Gupta", "weight": 3, "evidence": [{"source": "Vikram Singh", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-07 03:09:01", "duration_sec": "448", "evidence_type": "CDR"}, {"source": "Vikram Singh", "relation": "CALLED", "target": "Sanjay Gupta", "timestamp": "2026-09-08 23:57:47", "duration_sec": "21", "evidence_type": "CDR"}, {"source": "Vikram Singh", "relation": "SOCIAL_FOLLOWS", "target": "Sanjay Gupta", "platform": "Instagram", "evidence_type": "SOCMINT"}]}, {"source": "Sanjay Gupta", "target": "Central Bus Depot", "weight": 2, "evidence": [{"source": "Sanjay Gupta", "relation": "PRESENT_AT", "target": "Central Bus Depot", "timestamp": "2026-09-06 01:45:02", "platform": "Instagram", "evidence_type": "SOCMINT"}, {"source": "Sanjay Gupta", "relation": "PRESENT_AT", "target": "Central Bus Depot", "timestamp": "2026-08-15 01:45:02", "platform": "X", "evidence_type": "SOCMINT"}]}], "anomalies": [{"type": "UNUSUAL_CALL_FREQUENCY", "people_involved": ["Rahul Sharma", "Sanjay Gupta"], "description": "16 calls between Rahul Sharma and Sanjay Gupta within a 72-hour window (starting 2026-09-04 12:42)", "severity": "medium", "note": "Could indicate urgent coordination, or could be routine for close contacts \u2014 needs human review."}], "canvas": {"width": 1000, "height": 650}};
+
+const nodesById = {};
+DATA.nodes.forEach(n => nodesById[n.id] = n);
+
+let selectedId = null;
+
+// ---- Header meta ----
+const peopleCount = DATA.nodes.filter(n => n.type === "Person").length;
+document.getElementById("header-meta").textContent =
+  peopleCount + " people tracked · " + DATA.edges.length + " connections · " + DATA.anomalies.length + " flagged pattern(s)";
+
+// ---- Anomaly strip ----
+const stripContainer = document.getElementById("anomaly-strip-container");
+DATA.anomalies.forEach(a => {
+  const strip = document.createElement("div");
+  strip.className = "anomaly-strip";
+  strip.innerHTML = '<span class="tag">FLAGGED</span><span>' + a.description + '</span>';
+  strip.onclick = () => selectNode(a.people_involved[0]);
+  strip.style.cursor = "pointer";
+  stripContainer.appendChild(strip);
+});
+
+// ---- Sidebar person list ----
+const listEl = document.getElementById("person-list");
+function renderPersonList(filter) {
+  listEl.innerHTML = "";
+  const people = DATA.nodes
+    .filter(n => n.type === "Person")
+    .filter(n => !filter || n.id.toLowerCase().includes(filter.toLowerCase()))
+    .sort((a, b) => (b.betweenness_centrality || 0) - (a.betweenness_centrality || 0));
+
+  people.forEach(p => {
+    const row = document.createElement("div");
+    row.className = "person-row" + (p.id === selectedId ? " active" : "");
+    row.innerHTML = '<div class="name">' + p.id + '</div>' +
+      '<div class="sub">activity: ' + (p.weighted_degree || 0) +
+      ' &middot; bridge score: ' + (p.betweenness_centrality || 0).toFixed(2) + '</div>';
+    row.onclick = () => selectNode(p.id);
+    listEl.appendChild(row);
+  });
+}
+renderPersonList("");
+
+document.getElementById("search").addEventListener("input", (e) => renderPersonList(e.target.value));
+
+// ---- Graph drawing (SVG) ----
+const svg = document.getElementById("graph");
+const NS = "http://www.w3.org/2000/svg";
+const typeColor = { Person: "#c1272d", Vehicle: "#3e4c59", Location: "#9aa5b1" };
+
+function drawGraph() {
+  svg.innerHTML = "";
+  svg.setAttribute("viewBox", "0 0 " + DATA.canvas.width + " " + DATA.canvas.height);
+
+  // edges first (so nodes draw on top)
+  DATA.edges.forEach(e => {
+    const line = document.createElementNS(NS, "line");
+    const a = nodesById[e.source], b = nodesById[e.target];
+    line.setAttribute("x1", a.x); line.setAttribute("y1", a.y);
+    line.setAttribute("x2", b.x); line.setAttribute("y2", b.y);
+    const isHighlighted = selectedId && (e.source === selectedId || e.target === selectedId);
+    line.setAttribute("class", "edge-line" + (isHighlighted ? " highlighted" : ""));
+    svg.appendChild(line);
+  });
+
+  // nodes
+  DATA.nodes.forEach(n => {
+    const g = document.createElementNS(NS, "g");
+
+    const circle = document.createElementNS(NS, "circle");
+    circle.setAttribute("cx", n.x);
+    circle.setAttribute("cy", n.y);
+    const radius = n.type === "Person" ? 14 + Math.min(n.degree, 20) : 10;
+    circle.setAttribute("r", radius);
+    circle.setAttribute("fill", typeColor[n.type]);
+    let cls = "node-circle";
+    if (selectedId && n.id !== selectedId) {
+      const connected = DATA.edges.some(e =>
+        (e.source === selectedId && e.target === n.id) ||
+        (e.target === selectedId && e.source === n.id));
+      if (!connected) cls += " dimmed";
+    }
+    circle.setAttribute("class", cls);
+    circle.onclick = () => selectNode(n.id);
+    g.appendChild(circle);
+
+    const label = document.createElementNS(NS, "text");
+    label.setAttribute("x", n.x);
+    label.setAttribute("y", n.y + radius + 14);
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("class", "node-label");
+    label.textContent = n.id;
+    g.appendChild(label);
+
+    svg.appendChild(g);
+  });
+}
+
+// ---- Detail panel ----
+function selectNode(id) {
+  selectedId = id;
+  renderPersonList(document.getElementById("search").value);
+  drawGraph();
+  renderDetail(id);
+}
+
+function renderDetail(id) {
+  const n = nodesById[id];
+  const panel = document.getElementById("detail-panel");
+
+  if (n.type !== "Person") {
+    panel.innerHTML = "<h2>" + n.id + "</h2><div class='empty-state'>This is a " + n.type.toLowerCase() +
+      ", linked to " + n.degree + " connection(s) in the network.</div>";
+    return;
+  }
+
+  let html = "<h2>" + n.id + "</h2>";
+  html += "<div class='score-grid'>" +
+    "<div class='score-box'><div class='label'>Total Activity</div><div class='value'>" + (n.weighted_degree || 0) + "</div></div>" +
+    "<div class='score-box'><div class='label'>Bridge Score</div><div class='value'>" + (n.betweenness_centrality || 0).toFixed(2) + "</div></div>" +
+    "<div class='score-box'><div class='label'>Influence (PageRank)</div><div class='value'>" + (n.pagerank || 0).toFixed(3) + "</div></div>" +
+    "<div class='score-box'><div class='label'>Group</div><div class='value'>#" + n.community_id + "</div></div>" +
+  "</div>";
+
+  // Flags involving this person
+  const flags = DATA.anomalies.filter(a => a.people_involved.includes(id));
+  if (flags.length) {
+    html += "<div class='section-title'>Flagged for Review</div>";
+    flags.forEach(f => {
+      html += "<div class='flag-banner'><div class='flag-title'>" + f.type.replace(/_/g, " ") + "</div>" +
+        f.description + "<br><em>" + f.note + "</em></div>";
+    });
+  }
+
+  // Connections
+  html += "<div class='section-title'>Connections</div>";
+  const related = DATA.edges.filter(e => e.source === id || e.target === id);
+  related.forEach(e => {
+    const other = e.source === id ? e.target : e.source;
+    const relTypes = [...new Set(e.evidence.map(ev => ev.relation))].join(", ");
+    html += "<div class='connection-row'><span>" + other + "</span><span class='rel'>" + relTypes + " (" + e.weight + ")</span></div>";
+  });
+
+  panel.innerHTML = html;
+}
+
+drawGraph();
+</script>
+
+</body>
+</html>
